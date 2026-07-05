@@ -19,11 +19,9 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "spi.h"
-#include "stm32f1xx_hal_gpio.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
-#include <string.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -43,7 +41,7 @@ extern struct RxDoneMsg RxDoneParams;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 uint8_t conFlag = 0;//连接状态标志，0表示未连接，1表示已连接
-uint8_t Rxdata[11] = {0, 0x20};
+uint8_t Rxdata[11] = {0};
 uint8_t Txdata[13] = {0};
 volatile uint8_t rf_irq_pending = 0;//中断标志，1表示有中断发生，0表示没有中断发生
 
@@ -106,6 +104,10 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+  HAL_TIM_Base_Start(&htim2);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_RESET);
+  HAL_Delay(10);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_SET);
   rf_init();
   rf_set_default_para();
   rf_enter_continous_rx();//设置为连续接收模式
@@ -131,27 +133,36 @@ int main(void)
       rf_set_recv_flag(RADIO_FLAG_IDLE);//清除接收完成标志
       if (RxDoneParams.Size > 0)//接收到有效数据
       {
-        static uint8_t connectFlag_last = 0;
-        static uint8_t connectFlag = 0;
-        connectFlag_last = connectFlag;
+        static uint8_t cnt_last = 0;
+        static uint8_t cnt = 0;
+        cnt_last = cnt;
         uint8_t copy_len = (RxDoneParams.Size < sizeof(Rxdata)) ? RxDoneParams.Size : sizeof(Rxdata);
         memset(Rxdata, 0, sizeof(Rxdata));
         memcpy(Rxdata, RxDoneParams.Payload, copy_len);
-        connectFlag = Rxdata[9];//根据协议，最后一个字节会1，2，3循环改变
+        cnt = Rxdata[9];//根据协议，最后一个字节持续增加
         RxDoneParams.Size = 0;//清除接收数据长度
         __HAL_TIM_SET_COUNTER(&htim1, 0); 
-
-        if (connectFlag != connectFlag_last)
+        
+        if(cnt != cnt_last)//接收到新数据
         {
-          connectFlag_last = connectFlag;
-          HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, (connectFlag != 0) ? GPIO_PIN_RESET : GPIO_PIN_SET);
-          HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, (connectFlag != 0) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+          conFlag = 1;
+        }
+        if(cnt_last<cnt)
+        {
+        Rxdata[9] = cnt-cnt_last-1;//计算丢包数
+        }
+        else
+        {
+          Rxdata[9] = 255+cnt-cnt_last-1;//计算丢包数
+        }
+          HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, (conFlag != 0) ? GPIO_PIN_RESET : GPIO_PIN_SET);
+          HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, (conFlag != 0) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
           Txdata[0] = 0xef;
           memset(Txdata + 1, 0, sizeof(Txdata) - 1);
-          memcpy(Txdata + 1, Rxdata, sizeof(Rxdata));
+          memcpy(Txdata + 1, Rxdata, sizeof(Rxdata));//将接收到的数据复制到发送数据中
           Txdata[12] = 0xff;
-          HAL_UART_Transmit(&huart1, Txdata, sizeof(Txdata), HAL_MAX_DELAY);
-        }
+          HAL_UART_Transmit(&huart1, Txdata, sizeof(Txdata), 4);
       }
 
       rf_enter_continous_rx();
@@ -229,7 +240,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   {
     conFlag = 0;
     Txdata[0] = 0xef;
-    Txdata[10] = 0x00;
+    Txdata[10] = 255;
     Txdata[12] = 0xff;
     HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, GPIO_PIN_SET);
     HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, GPIO_PIN_RESET);

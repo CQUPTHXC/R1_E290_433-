@@ -10,6 +10,7 @@
 #include "main.h"
 #include "spi.h"
 #include "e290_demo.h"
+#include "stm32f1xx_hal_gpio.h"
 
 extern uint8_t spi_tx_rx(uint8_t tx_data);
 
@@ -49,7 +50,7 @@ void spi_cs_set_high(void)
 {
     //PORT_SetBits(PortA, Pin04);
     
-    HAL_GPIO_WritePin(GPIOA, SPI_CS_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 }
 
 /**
@@ -61,7 +62,7 @@ void spi_cs_set_low(void)
 {
     //PORT_ResetBits(PortA, Pin04);
     
-    HAL_GPIO_WritePin(GPIOA, SPI_CS_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
 }
 
 /**
