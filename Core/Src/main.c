@@ -41,9 +41,10 @@ extern struct RxDoneMsg RxDoneParams;
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 uint8_t conFlag = 0;//连接状态标志，0表示未连接，1表示已连接
-uint8_t Rxdata[11] = {0};
+uint8_t Rxdata[11] = {0,1,2,3};
 uint8_t Txdata[13] = {0};
 volatile uint8_t rf_irq_pending = 0;//中断标志，1表示有中断发生，0表示没有中断发生
+uint32_t time = 0;
 
 uint8_t error = 0;
 /* USER CODE END PD */
@@ -105,14 +106,16 @@ int main(void)
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start(&htim2);
+  //开机reset通信模块
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_RESET);
   HAL_Delay(10);
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_SET);
+
   rf_init();
   rf_set_default_para();
-  rf_enter_continous_rx();//设置为连续接收模式
-  Txdata[0] = 0xef;
+  //rf_enter_continous_tx();//设置为连续发送模式
   HAL_TIM_Base_Start_IT(&htim1);
+  HAL_UART_Receive_IT(&huart1, Rxdata, 11);//开启串口接收中断
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -122,67 +125,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (rf_irq_pending)
-    {
-      rf_irq_pending = 0;
-      rf_irq_process();
-    }
-
-    if (rf_get_recv_flag() == RADIO_FLAG_RXDONE)//接收完成标志
-    {
-      rf_set_recv_flag(RADIO_FLAG_IDLE);//清除接收完成标志
-      if (RxDoneParams.Size > 0)//接收到有效数据
-      {
-        static uint8_t cnt_last = 0;
-        static uint8_t cnt = 0;
-        cnt_last = cnt;
-        uint8_t copy_len = (RxDoneParams.Size < sizeof(Rxdata)) ? RxDoneParams.Size : sizeof(Rxdata);
-        memset(Rxdata, 0, sizeof(Rxdata));
-        memcpy(Rxdata, RxDoneParams.Payload, copy_len);
-        cnt = Rxdata[9];//根据协议，最后一个字节持续增加
-        RxDoneParams.Size = 0;//清除接收数据长度
-        __HAL_TIM_SET_COUNTER(&htim1, 0); 
-        
-        if(cnt != cnt_last)//接收到新数据
-        {
-          conFlag = 1;
-        }
-        if(cnt_last<cnt)
-        {
-        Rxdata[9] = cnt-cnt_last-1;//计算丢包数
-        }
-        else
-        {
-          Rxdata[9] = 255+cnt-cnt_last-1;//计算丢包数
-        }
-          HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, (conFlag != 0) ? GPIO_PIN_RESET : GPIO_PIN_SET);
-          HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, (conFlag != 0) ? GPIO_PIN_SET : GPIO_PIN_RESET);
-
-          Txdata[0] = 0xef;
-          memset(Txdata + 1, 0, sizeof(Txdata) - 1);
-          memcpy(Txdata + 1, Rxdata, sizeof(Rxdata));//将接收到的数据复制到发送数据中
-          Txdata[12] = 0xff;
-          HAL_UART_Transmit(&huart1, Txdata, sizeof(Txdata), 4);
-      }
-
-      rf_enter_continous_rx();
-    }
-    else if ((rf_get_recv_flag() == RADIO_FLAG_RXTIMEOUT) || (rf_get_recv_flag() == RADIO_FLAG_RXERR))//接收超时或接收错误标志
-    {
-      rf_set_recv_flag(RADIO_FLAG_IDLE);
-      conFlag = 0;
-      HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, GPIO_PIN_SET);
-      HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, GPIO_PIN_RESET);
-      rf_enter_continous_rx();
-    }
-    else if (rf_get_recv_flag() == RADIO_FLAG_TXDONE)//发送完成标志
-    {
-      rf_set_recv_flag(RADIO_FLAG_IDLE);
-      rf_enter_continous_rx();
-    }
-
-    HAL_Delay(1);
-  }
+   
   /* USER CODE END 3 */
 }
 
@@ -238,14 +181,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM1)
   {
-    conFlag = 0;
-    Txdata[0] = 0xef;
-    Txdata[10] = 255;
-    Txdata[12] = 0xff;
-    HAL_GPIO_WritePin(LED4_GPIO_Port, LED4_Pin, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, GPIO_PIN_RESET);
-    HAL_UART_Transmit(&huart1, Txdata, sizeof(Txdata), HAL_MAX_DELAY);
-    rf_enter_continous_rx();
+    
+  }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART1)
+  {
+    rf_single_tx(Rxdata, 11);
+    HAL_UART_Receive_IT(&huart1, Rxdata, 11);
   }
 }
 /* USER CODE END 4 */
