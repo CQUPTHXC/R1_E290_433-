@@ -125,7 +125,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-   
+  }
   /* USER CODE END 3 */
 }
 
@@ -189,7 +189,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART1)
   {
-    rf_single_tx(Rxdata, 11);
+    rf_single_tx_data(Rxdata, 11, &time);
     HAL_UART_Receive_IT(&huart1, Rxdata, 11);
   }
 }
